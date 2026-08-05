@@ -6,10 +6,10 @@ import { RiCloseLine, RiFileExcel2Line } from "@remixicon/react";
 
 export function ConnectSheetDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useLang();
-  const { sheetId, setSheetId } = useData();
+  const { sheetId, sheetInput, setSheetId } = useData();
   const [value, setValue] = useState("");
 
-  useEffect(() => { if (open) setValue(sheetId); }, [open, sheetId]);
+  useEffect(() => { if (open) setValue(sheetInput); }, [open, sheetInput]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     if (open) window.addEventListener("keydown", onKey);

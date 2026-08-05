@@ -13,16 +13,20 @@ interface DataCtx {
   loading: boolean;
   lastUpdated: Date | null;
   sheetId: string;
-  setSheetId: (id: string) => void;
+  /** Exactly what the user last typed — a full URL stays a full URL. */
+  sheetInput: string;
+  setSheetId: (input: string) => void;
   refresh: () => void;
 }
 
 const Ctx = createContext<DataCtx>({
   data: null, source: "demo", error: null, loading: true,
-  lastUpdated: null, sheetId: "", setSheetId: () => {}, refresh: () => {},
+  lastUpdated: null, sheetId: "", sheetInput: "", setSheetId: () => {}, refresh: () => {},
 });
 
 const POLL_MS = 60_000;
+const ID_KEY = "salesup-sheet-id";
+const INPUT_KEY = "salesup-sheet-input";
 
 /** Accepts a full Google Sheets URL or a bare ID and returns the ID. */
 export function extractSheetId(input: string): string {
@@ -38,13 +42,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [sheetId, setSheetIdState] = useState("");
+  const [sheetInput, setSheetInputState] = useState("");
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const gen = useRef(0); // latest-wins guard against out-of-order responses
 
   useEffect(() => {
     try {
-      const saved = localStorage.getItem("salesup-sheet-id");
+      const saved = localStorage.getItem(ID_KEY);
       if (saved) setSheetIdState(saved);
+      // Sessions saved before the input was kept have only the id — show that.
+      setSheetInputState(localStorage.getItem(INPUT_KEY) ?? saved ?? "");
     } catch {}
   }, []);
 
@@ -87,24 +94,33 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
   }, [sheetId, load]);
 
-  const setSheetId = (id: string) => {
-    const clean = extractSheetId(id);
+  const setSheetId = (input: string) => {
+    const raw = input.trim();
+    const clean = extractSheetId(raw);
     setLoading(true);
+    // The id drives fetching; the raw text is kept only so reopening the dialog
+    // shows what was typed instead of the id extracted from it.
+    setSheetInputState(clean ? raw : "");
     if (clean === sheetId) {
       void load(clean); // same id re-saved: effect won't re-run, refresh directly
     } else {
       setSheetIdState(clean);
     }
     try {
-      if (clean) localStorage.setItem("salesup-sheet-id", clean);
-      else localStorage.removeItem("salesup-sheet-id");
+      if (clean) {
+        localStorage.setItem(ID_KEY, clean);
+        localStorage.setItem(INPUT_KEY, raw);
+      } else {
+        localStorage.removeItem(ID_KEY);
+        localStorage.removeItem(INPUT_KEY);
+      }
     } catch {}
   };
 
   const refresh = () => { setLoading(true); void load(sheetId); };
 
   return (
-    <Ctx.Provider value={{ data, source, error, loading, lastUpdated, sheetId, setSheetId, refresh }}>
+    <Ctx.Provider value={{ data, source, error, loading, lastUpdated, sheetId, sheetInput, setSheetId, refresh }}>
       {children}
     </Ctx.Provider>
   );

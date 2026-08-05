@@ -1,0 +1,129 @@
+@import "tailwindcss";
+@import "@fontsource/cairo/400.css";
+@import "@fontsource/cairo/600.css";
+@import "@fontsource/cairo/700.css";
+@import "@fontsource/cairo/800.css";
+@import "@fontsource/raleway/700.css";
+@import "@fontsource/raleway/800.css";
+
+:root {
+  /* SalesUp brand + shadcn preset (luma / green / stone / large radius) */
+  --brand-dark: #133f40;
+  --brand-green: #04cb79;
+  --brand-green-deep: #04a868;
+  --brand-mint: #05ffa6;
+  --surface: #fbfdfc;
+  --card: #ffffff;
+  --ink: #133f40;
+  --ink-2: #5f6b76;
+  --ink-3: #94a3b8;
+  --line: rgba(4, 203, 121, 0.16);
+  --amber: #d97706;
+  --red: #dc2626;
+  /* validated chart series colors (dataviz six-checks: green/blue pair) */
+  --chart-cur: #04a868;
+  --chart-prev: #0369a1;
+  --grid: #ecf5f0;
+}
+
+@theme inline {
+  --color-brand-dark: var(--brand-dark);
+  --color-brand-green: var(--brand-green);
+  --color-brand-deep: var(--brand-green-deep);
+  --color-brand-mint: var(--brand-mint);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink2: var(--ink-2);
+  --color-ink3: var(--ink-3);
+  --color-amber: var(--amber);
+  --color-danger: var(--red);
+  --font-sans: "Cairo", ui-sans-serif, system-ui, sans-serif;
+  --font-logo: "Raleway", "Cairo", sans-serif;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  background:
+    radial-gradient(1100px 500px at 85% -10%, rgba(4, 203, 121, 0.10), transparent 60%),
+    radial-gradient(900px 500px at -10% 110%, rgba(19, 63, 64, 0.08), transparent 60%),
+    var(--surface);
+  color: var(--ink);
+  font-family: "Cairo", ui-sans-serif, system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+/* preset: pointer=true */
+button, [role="button"], select, summary, a { cursor: pointer; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 1.15rem; /* preset: radius=large */
+  box-shadow: 0 1px 2px rgba(19, 63, 64, 0.04), 0 8px 30px rgba(19, 63, 64, 0.05);
+}
+
+.card-accent { position: relative; overflow: hidden; }
+.card-accent::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--brand-dark), var(--brand-green));
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  padding: 0.28rem 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pill-btn {
+  border-radius: 999px;
+  padding: 0.45rem 1.1rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border: 1px solid rgba(4, 203, 121, 0.25);
+  background: #fff;
+  color: var(--ink-2);
+  transition: all 0.18s ease;
+}
+.pill-btn:hover { border-color: var(--brand-green); color: var(--brand-dark); transform: translateY(-1px); }
+.pill-btn[data-active="true"] {
+  background: linear-gradient(120deg, var(--brand-dark), var(--brand-green));
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 8px 22px rgba(4, 203, 121, 0.28);
+}
+
+.select {
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: #fff;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.d1 { animation-delay: 0.05s; } .d2 { animation-delay: 0.12s; }
+.d3 { animation-delay: 0.19s; } .d4 { animation-delay: 0.26s; }
+
+::selection { background: rgba(4, 203, 121, 0.25); }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .fade-up, .animate-spin, .animate-pulse { animation: none !important; }
+  * { transition-duration: 0.01ms !important; }
+}

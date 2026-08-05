@@ -4,7 +4,7 @@
 // series colors (current #04a868 / previous #0369a1), thin marks, rounded
 // data ends, recessive grid, tooltips everywhere, legends for ≥2 series.
 import {
-  Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer,
+  Bar, BarChart, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer,
   Tooltip, XAxis, YAxis, Cell,
 } from "recharts";
 import { useLang } from "@/lib/i18n";
@@ -185,41 +185,74 @@ export function GroupedCompare({ data, curLabel, prevLabel, height = 220 }: {
   );
 }
 
-/* ---------- achieved-vs-target progress rows (unit-safe, HTML) ---------- */
-export function TargetProgressRows({ rows, ofTargetLabel }: {
-  rows: { label: string; achieved: number; target: number; unit?: string }[];
+/* ---------- achieved-vs-target combo: bars + a line across the bar tops ----------
+   Plotted as % of target rather than raw values: the four metrics carry
+   different units (deals, thousands of SAR, visits), so a shared raw axis would
+   flatten the small-count metrics into slivers beside revenue. Percent puts
+   them on one comparable scale; the raw achieved/target pair lives in the
+   tooltip, and the dashed 100% line is the target itself. */
+export interface TargetDatum { label: string; achieved: number; target: number; unit?: string }
+
+const pctOf = (achieved: number, target: number) =>
+  target > 0 ? Math.round((achieved / target) * 100) : 0;
+const gradeColor = (pct: number) => (pct >= 80 ? "#04a868" : pct >= 60 ? "#d97706" : "#dc2626");
+
+export function TargetCombo({ rows, ofTargetLabel, targetLabel, height = 260 }: {
+  rows: TargetDatum[];
   ofTargetLabel: string;
+  targetLabel: string;
+  height?: number;
 }) {
+  const data = rows.map((r) => ({ ...r, pct: pctOf(r.achieved, r.target) }));
+  // Keep the 100% target line inside the plot even when every metric is short of it.
+  const top = Math.max(110, ...data.map((d) => d.pct + 10));
+
   return (
-    <div className="flex flex-col gap-4">
-      {rows.map((r) => {
-        const pctv = r.target > 0 ? Math.round((r.achieved / r.target) * 100) : 0;
-        const color = pctv >= 80 ? "#04a868" : pctv >= 60 ? "#d97706" : "#dc2626";
-        return (
-          <div key={r.label} title={`${r.label}: ${fmt(r.achieved)} / ${fmt(r.target)}`}>
-            <div className="mb-1 flex flex-wrap items-baseline justify-between gap-2">
-              <span className="text-sm font-bold text-ink">{r.label}</span>
-              <span className="text-xs font-semibold text-ink2">
-                <b dir="ltr" className="text-sm tabular-nums text-brand-dark">{fmt(r.achieved)}</b>
-                {" / "}
-                <span dir="ltr" className="tabular-nums">{fmt(r.target)}</span>
-                {r.unit ? ` ${r.unit}` : ""}
-                <span className="mx-2 rounded-full px-2 py-0.5 text-[11px] font-extrabold"
-                  style={{ background: `${color}1f`, color }}>
-                  {pctv}% {ofTargetLabel}
-                </span>
-              </span>
-            </div>
-            <div className="relative h-3 w-full overflow-hidden rounded-full bg-[var(--grid)]">
-              <div className="h-full rounded-full transition-all duration-700"
-                style={{ width: `${Math.min(pctv, 100)}%`, background: color }} />
-              {pctv > 100 && (
-                <div className="absolute inset-y-0 end-0 w-1 bg-brand-dark" title=">100%" />
-              )}
-            </div>
-          </div>
-        );
-      })}
+    <div dir="ltr">
+      <ResponsiveContainer width="100%" height={height}>
+        <ComposedChart data={data} margin={{ top: 16, right: 12, left: 4, bottom: 0 }} barCategoryGap="28%">
+          <CartesianGrid stroke={GRID} vertical={false} />
+          <XAxis dataKey="label" tick={{ fill: INK3, fontSize: 11 }} axisLine={false} tickLine={false}
+            interval={0} height={38} tickMargin={8} />
+          <YAxis domain={[0, top]} tick={{ fill: INK3, fontSize: 11 }} axisLine={false} tickLine={false}
+            width={48} tickFormatter={(v: number) => `${v}%`} />
+          <Tooltip
+            cursor={{ fill: "rgba(4,203,121,.06)" }}
+            content={({ active, payload }) => {
+              if (!active || !payload?.length) return null;
+              const d = payload[0].payload as TargetDatum & { pct: number };
+              return (
+                <TipBox
+                  label={d.label}
+                  rows={[
+                    {
+                      name: ofTargetLabel,
+                      value: `${fmt(d.achieved)} / ${fmt(d.target)}${d.unit ? ` ${d.unit}` : ""}`,
+                      color: gradeColor(d.pct),
+                    },
+                    { name: "%", value: `${d.pct}%`, color: "#133f40" },
+                  ]}
+                />
+              );
+            }}
+          />
+          <ReferenceLine
+            y={100} stroke="#133f40" strokeDasharray="6 5" strokeWidth={2}
+            label={{ value: targetLabel, position: "right", fill: "#133f40", fontSize: 11, fontWeight: 700 }}
+          />
+          <Bar dataKey="pct" radius={[4, 4, 0, 0]} maxBarSize={54} isAnimationActive={false}>
+            {data.map((d) => (
+              <Cell key={d.label} fill={gradeColor(d.pct)} />
+            ))}
+          </Bar>
+          {/* the line rides the same series, so its points sit on the bar tops */}
+          <Line
+            type="linear" dataKey="pct" stroke="#133f40" strokeWidth={2} isAnimationActive={false}
+            dot={{ r: 4, fill: "#fff", stroke: "#133f40", strokeWidth: 2 }}
+            activeDot={{ r: 5 }} legendType="none"
+          />
+        </ComposedChart>
+      </ResponsiveContainer>
     </div>
   );
 }

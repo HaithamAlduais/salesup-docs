@@ -6,7 +6,7 @@ import { employeeAgg, fmt, momChange, parsePeriod, previousLabel, teamAgg } from
 import type { PeriodKind } from "@/lib/types";
 import { PeriodFilter } from "@/components/period-filter";
 import { KpiCard, SectionTitle } from "@/components/ui";
-import { TargetProgressRows } from "@/components/charts";
+import { TargetCombo } from "@/components/charts";
 
 function Mom({ v }: { v: number | null }) {
   const { t } = useLang();
@@ -91,8 +91,9 @@ export default function TeamPage() {
       {/* performance vs target */}
       <SectionTitle>{`${t("perfVsTarget")} — ${value}`}</SectionTitle>
       <div className="card p-6">
-        <TargetProgressRows
+        <TargetCombo
           ofTargetLabel={t("ofTarget")}
+          targetLabel={t("target")}
           rows={[
             { label: t("tDeals"), achieved: model.emp.deals, target: model.emp.tDeals },
             { label: t("tRevenue"), achieved: model.emp.revenueK, target: model.emp.tRevenueK },

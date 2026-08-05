@@ -5,14 +5,13 @@ import type { Dataset } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
+/** Default sheet: the SalesUp CRM Google Sheet (override with ?id= or SHEET_ID env). */
+const DEFAULT_SHEET_ID = "17AnhC5Z2tQQF1Wy2IBnBvRJ-g2MJ5AO65OongmJ7XyU";
+
 export async function GET(req: NextRequest) {
-  const id = req.nextUrl.searchParams.get("id") || process.env.SHEET_ID || "";
-  if (!id) {
-    return NextResponse.json(
-      { source: "demo", fetchedAt: new Date().toISOString(), data: demoData as unknown as Dataset },
-      { headers: { "Cache-Control": "no-store" } },
-    );
-  }
+  const id = req.nextUrl.searchParams.get("id") || process.env.SHEET_ID || DEFAULT_SHEET_ID;
+  // No "no sheet configured" branch: DEFAULT_SHEET_ID always resolves, so the
+  // demo dataset is now reached only when the sheet itself is unreachable.
   try {
     const data = await fetchDataset(id);
     return NextResponse.json(

@@ -28,7 +28,7 @@ A Next.js web app that mirrors the SalesUp dashboards and reads **all of its dat
 SHEET_ID=1AbCdEfGh…XYZ
 ```
 
-No sheet configured → the site shows the built-in demo dataset (labeled "Demo data").
+The SalesUp CRM sheet is compiled in as the default, so the site works with no configuration; `?id=`, the in-app dialog, and `SHEET_ID` each override it. The built-in demo dataset (labeled "Demo data") now appears only when the sheet is unreachable.
 
 ## 3 · Run locally
 

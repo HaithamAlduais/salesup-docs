@@ -3,14 +3,15 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { useLang } from "@/lib/i18n";
 import { useData } from "@/lib/data-context";
-import { companiesOverview, overallAchievement, overallStatus, parsePeriod } from "@/lib/calc";
+import {
+  companiesOverview, dataMonths, hasCompanyData, latestMonthLabel, overallAchievement,
+  overallStatus, parsePeriod,
+} from "@/lib/calc";
 import { KpiCard, StatusChip } from "@/components/ui";
 import { Logo } from "@/components/nav";
 import {
   RiBuilding2Line, RiLineChartLine, RiTeamLine, RiFilePdf2Line, RiArrowLeftLine, RiArrowRightLine,
 } from "@remixicon/react";
-
-const LATEST = "Jun-2026";
 
 export default function Home() {
   const { t, dir } = useLang();
@@ -18,14 +19,17 @@ export default function Home() {
 
   const stats = useMemo(() => {
     if (!data) return null;
-    const w = parsePeriod("monthly", LATEST)!;
+    // follow the sheet: the headline is always the newest month that has data,
+    // so adding a month moves the dashboard forward on its own
+    const latest = latestMonthLabel(dataMonths(data.companyMonthly, hasCompanyData));
+    const w = parsePeriod("monthly", latest)!;
     const ov = companiesOverview(data, w);
     const overall = overallAchievement(ov);
     const agents = data.teamMonthly
       .filter((r) => r.agents != null)
       .sort((a, b) => (a.year * 12 + a.month) - (b.year * 12 + b.month))
       .at(-1)?.agents ?? 0;
-    return { overall, status: overallStatus(overall), companies: data.companies.length, agents };
+    return { latest, overall, status: overallStatus(overall), companies: data.companies.length, agents };
   }, [data]);
 
   const Arrow = dir === "rtl" ? RiArrowLeftLine : RiArrowRightLine;
@@ -63,7 +67,12 @@ export default function Home() {
           delay="d1"
           label={t("overallAchievement")}
           value={loading || !stats ? "…" : `${stats.overall}%`}
-          sub={stats ? <StatusChip status={stats.status} /> : null}
+          sub={stats ? (
+            <span className="flex flex-wrap items-center gap-2">
+              <StatusChip status={stats.status} />
+              <span className="text-xs font-bold text-ink3" dir="ltr">{stats.latest}</span>
+            </span>
+          ) : null}
         />
         <KpiCard delay="d2" label={t("status")}
           value={stats ? <StatusChip status={stats.status} /> : "…"} />

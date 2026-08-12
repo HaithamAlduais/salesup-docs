@@ -177,6 +177,10 @@ export async function fetchDataset(sheetId: string): Promise<Dataset> {
           year: numC(r[0])!, month: numC(r[1])!, employee: strC(r[2]),
           deals: numC(r[3]), revenueK: numC(r[4]), newDeals: numC(r[5]), visits: numC(r[6]),
           tDeals: numC(r[7]), tRevenueK: numC(r[8]), tNewDeals: numC(r[9]), tVisits: numC(r[10]),
+          // L is the workbook's "Month Index (auto)" helper; M is the per-month
+          // project. Reading past the end of a shorter row yields "" — sheets
+          // without the column keep working.
+          project: strC(r[12]),
         })),
       (r) => `${r.year}-${r.month}-${r.employee}`,
     ),

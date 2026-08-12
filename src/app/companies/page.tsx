@@ -4,7 +4,7 @@ import { useLang, type DictKey } from "@/lib/i18n";
 import { useData } from "@/lib/data-context";
 import {
   bestWorst, companiesOverview, companyAgg, companyChanges, companyStatus,
-  companyYearSeries, fmt, parsePeriod, previousLabel,
+  companyYearSeries, dataMonths, fmt, hasCompanyData, parsePeriod, periodOptions, previousLabel,
 } from "@/lib/calc";
 import type { PeriodKind } from "@/lib/types";
 import { PeriodFilter } from "@/components/period-filter";
@@ -18,11 +18,21 @@ export default function CompaniesPage() {
   const { data, loading } = useData();
   const [selected, setSelected] = useState<string>("");
   const [kind, setKind] = useState<PeriodKind>("monthly");
-  const [value, setValue] = useState("Jun-2026");
+  const [picked, setPicked] = useState("");
 
   const companies = data?.companies ?? [];
   const selName = selected || companies[0]?.name || "";
   const company = companies.find((c) => c.name === selName);
+
+  // Only the months this company was actually active: the sheet keeps a full
+  // 12-month block for every company, so the empty ones must not be offered.
+  const months = useMemo(
+    () => dataMonths((data?.companyMonthly ?? []).filter((r) => r.company === selName), hasCompanyData),
+    [data, selName],
+  );
+  const options = useMemo(() => periodOptions(kind, months), [kind, months]);
+  // Switching company can invalidate the chosen period — fall back to its newest.
+  const value = options.includes(picked) ? picked : options.at(-1) ?? "";
 
   const model = useMemo(() => {
     if (!data || !company) return null;
@@ -45,7 +55,7 @@ export default function CompaniesPage() {
   if (loading && !data) return <p className="py-20 text-center text-ink2">{t("loading")}</p>;
   if (data && companies.length === 0)
     return <div className="card p-14 text-center text-sm text-ink2">{t("reportsEmpty")}</div>;
-  if (!data || !company || !model) return null;
+  if (!data || !company) return null;
 
   const metricLabel = (key: string) => {
     const idx = ["revenue", "deals", "leads", "winRate", "pipeline", "achievement"].indexOf(key);
@@ -59,9 +69,9 @@ export default function CompaniesPage() {
       <header className="fade-up mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-extrabold text-brand-dark sm:text-3xl">{t("companiesTitle")}</h1>
-          <p className="mt-1 text-sm text-ink3">{value}</p>
+          <p className="mt-1 text-sm text-ink3">{value || "—"}</p>
         </div>
-        <PeriodFilter kind={kind} value={value} onKind={setKind} onValue={setValue} />
+        <PeriodFilter kind={kind} value={value} onKind={setKind} onValue={setPicked} months={months} />
       </header>
 
       {/* company pills */}
@@ -74,6 +84,13 @@ export default function CompaniesPage() {
         ))}
       </div>
 
+      {!model ? (
+        <div className="card fade-up p-14 text-center text-sm leading-7 text-ink2">
+          <p className="mb-1 text-lg font-extrabold text-brand-dark">{company.name}</p>
+          {t("noCompanyMonths")}
+        </div>
+      ) : (
+      <>
       {/* selected company header */}
       <div className="fade-up d1 mb-4 flex flex-wrap items-center gap-3">
         <h2 className="text-xl font-extrabold text-brand-dark">{company.name}</h2>
@@ -191,6 +208,8 @@ export default function CompaniesPage() {
           </tbody>
         </table>
       </div>
+      </>
+      )}
     </div>
   );
 }

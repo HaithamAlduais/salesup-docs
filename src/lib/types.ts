@@ -56,6 +56,12 @@ export interface EmployeeMonthly {
   tRevenueK: number | null;
   tNewDeals: number | null;
   tVisits: number | null;
+  /**
+   * What this person worked on that month (Employee Monthly column M).
+   * Optional: sheets written before the column existed simply omit it, and the
+   * UI falls back to the employee's current project from the Employees tab.
+   */
+  project?: string;
 }
 
 export interface ReportRow {

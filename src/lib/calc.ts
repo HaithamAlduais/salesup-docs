@@ -11,8 +11,53 @@ export const MONTH_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug
 
 export const monthIndex = (y: number, m: number) => (y - BASE_YEAR) * 12 + m;
 
+// ---------------- data availability ----------------
+// A monthly row always exists for every entity — the sheet pre-builds a
+// 12-month block per company and per employee — so "the row is there" says
+// nothing about whether the month happened.
+//
+// A month counts as active when it carries at least one non-zero figure. That
+// is the same rule the workbook uses when deciding which months to leave
+// empty: a row of nothing but zeros means "no relationship yet", not "we
+// measured, and everything was zero". It governs which periods are offered and
+// how far the yearly chart runs — never the achievement maths, where a typed 0
+// still counts as a measured month.
+const anyReal = (...vals: (number | null | undefined)[]) =>
+  vals.some((v) => v != null && v !== 0);
+
+export const hasCompanyData = (r: CompanyMonthly) =>
+  anyReal(r.revenue, r.deals, r.leads, r.winRate, r.pipeline);
+
+export const hasDeptData = (r: DepartmentMonthly) =>
+  anyReal(r.active, r.newP, r.ended, r.mrr, r.avgRev, r.daysToClose, r.nps);
+
+export const hasTeamData = (r: TeamMonthly) =>
+  anyReal(r.agents, r.newAgents, r.resigned, r.retention);
+
+export const hasEmployeeData = (r: EmployeeMonthly) =>
+  anyReal(r.deals, r.revenueK, r.newDeals, r.visits,
+          r.tDeals, r.tRevenueK, r.tNewDeals, r.tVisits) || Boolean(r.project);
+
+/** Sorted, de-duplicated month indices that carry data. */
+export function dataMonths<T extends { year: number; month: number }>(
+  rows: T[], has: (r: T) => boolean,
+): number[] {
+  const s = new Set<number>();
+  for (const r of rows) if (has(r)) s.add(monthIndex(r.year, r.month));
+  return [...s].sort((a, b) => a - b);
+}
+
+/** Newest month that has data, as a monthly label; Jan of the base year if none. */
+export const latestMonthLabel = (months: number[]) =>
+  months.length ? indexToLabel("monthly", months[months.length - 1]) : `${MONTH_ABBR[0]}-${BASE_YEAR}`;
+
 // ---------------- periods ----------------
-export function periodOptions(kind: PeriodKind): string[] {
+/**
+ * Every period of `kind`, chronologically. Pass `months` to keep only the
+ * periods that overlap a month with data — an empty quarter should never be
+ * offered as a choice.
+ */
+export function periodOptions(kind: PeriodKind, months?: number[]): string[] {
   const out: string[] = [];
   for (const y of YEARS) {
     if (kind === "monthly") for (const m of MONTH_ABBR) out.push(`${m}-${y}`);
@@ -20,8 +65,23 @@ export function periodOptions(kind: PeriodKind): string[] {
     if (kind === "halfYearly") for (let h = 1; h <= 2; h++) out.push(`H${h}-${y}`);
     if (kind === "yearly") out.push(String(y));
   }
-  return out;
+  if (!months) return out;
+  if (!months.length) return [];
+  const set = new Set(months);
+  return out.filter((v) => {
+    const w = parsePeriod(kind, v);
+    if (!w) return false;
+    for (let i = w.start; i < w.start + w.span; i++) if (set.has(i)) return true;
+    return false;
+  });
 }
+
+/** The period of `kind` that contains `idx`, if it is on offer. */
+export const periodContaining = (kind: PeriodKind, idx: number, options: string[]) =>
+  options.find((o) => {
+    const w = parsePeriod(kind, o);
+    return w != null && idx >= w.start && idx < w.start + w.span;
+  });
 
 export function parsePeriod(kind: PeriodKind, value: string): PeriodWindow | null {
   if (!value) return null;
@@ -158,15 +218,33 @@ export function bestWorst(changes: MetricChange[]) {
   return { best, worst };
 }
 
+/**
+ * The year's months for one company, trimmed to the span it was actually
+ * active: months before the first and after the last measured month are
+ * dropped, so a partnership that started in April doesn't open with three
+ * empty columns. Gaps *inside* the span are kept — a missed month is a fact
+ * worth seeing.
+ */
 export function companyYearSeries(
   rows: CompanyMonthly[], company: Company, year: number,
 ) {
   const isDeals = company.targetType === "Deals";
-  return MONTH_ABBR.map((abbr, i) => {
+  const all = MONTH_ABBR.map((abbr, i) => {
     const r = rows.find((x) => x.company === company.name && x.year === year && x.month === i + 1);
     const achieved = r ? (isDeals ? r.deals : r.revenue) : null;
-    return { month: abbr, achieved: achieved ?? 0, hasData: achieved != null, target: company.target ?? 0 };
+    return {
+      month: abbr,
+      achieved: achieved ?? 0,
+      hasData: achieved != null,          // drives the bar colour
+      active: r != null && hasCompanyData(r), // drives where the chart starts and ends
+      target: company.target ?? 0,
+    };
   });
+  const first = all.findIndex((m) => m.active);
+  if (first < 0) return [];
+  let last = all.length - 1;
+  while (last > first && !all[last].active) last--;
+  return all.slice(first, last + 1);
 }
 
 export interface CompanyOverviewRow {
@@ -271,6 +349,20 @@ export function employeeAgg(
     tNewDeals: sum(rs.map((r) => r.tNewDeals)),
     tVisits: sum(rs.map((r) => r.tVisits)),
   };
+}
+
+/**
+ * What this person worked on during the selected period: the newest month
+ * inside the window that names a project. Empty when the sheet doesn't say —
+ * callers fall back to the employee's current project.
+ */
+export function employeeProject(
+  rows: EmployeeMonthly[], employee: string, w: PeriodWindow,
+): string {
+  const rs = rows
+    .filter((r) => r.employee === employee && inWindow(r, w) && Boolean(r.project))
+    .sort((a, b) => monthIndex(a.year, a.month) - monthIndex(b.year, b.month));
+  return rs.length ? rs[rs.length - 1].project ?? "" : "";
 }
 
 export const fmt = (n: number | null | undefined) =>

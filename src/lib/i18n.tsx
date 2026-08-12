@@ -121,7 +121,12 @@ const dict = {
   employee: { ar: "الموظف", en: "Employee" },
   allEmployees: { ar: "كل الموظفين", en: "All Employees" },
   allEmployeesIntro: { ar: "عرض بيانات جميع الموظفين مجمعة", en: "Showing aggregated data for all employees" },
-  introRole: { ar: "أخصائي مبيعات يعمل حالياً على مشروع", en: "Sales Specialist currently working on" },
+  projectThisPeriod: { ar: "المشروع في هذه الفترة", en: "Project this period" },
+  currentProject: { ar: "المشروع الحالي", en: "Current project" },
+  noCompanyMonths: {
+    ar: "لا توجد أشهر مسجّلة لهذه الشركة بعد — أضف بياناتها في شيت Company Monthly.",
+    en: "No months recorded for this company yet — add its data in the Company Monthly sheet.",
+  },
   perfVsTarget: { ar: "الأداء مقابل الهدف", en: "Performance vs Target" },
   tDeals: { ar: "الصفقات المغلقة", en: "Deals Closed" },
   tRevenue: { ar: "الإيرادات (ألف ر.س)", en: "Revenue (K SAR)" },

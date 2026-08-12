@@ -2,7 +2,10 @@
 import { useMemo, useState } from "react";
 import { useLang } from "@/lib/i18n";
 import { useData } from "@/lib/data-context";
-import { employeeAgg, fmt, momChange, parsePeriod, previousLabel, teamAgg } from "@/lib/calc";
+import {
+  dataMonths, employeeAgg, employeeProject, fmt, hasEmployeeData, hasTeamData, momChange,
+  parsePeriod, periodOptions, previousLabel, teamAgg,
+} from "@/lib/calc";
 import type { PeriodKind } from "@/lib/types";
 import { PeriodFilter } from "@/components/period-filter";
 import { KpiCard, SectionTitle } from "@/components/ui";
@@ -26,7 +29,19 @@ export default function TeamPage() {
   const { data, loading } = useData();
   const [employee, setEmployee] = useState<string>("all");
   const [kind, setKind] = useState<PeriodKind>("monthly");
-  const [value, setValue] = useState("Jun-2026");
+  const [picked, setPicked] = useState("");
+
+  // headcount months and employee-activity months together — either one makes
+  // a period worth offering
+  const months = useMemo(
+    () => [...new Set([
+      ...dataMonths(data?.teamMonthly ?? [], hasTeamData),
+      ...dataMonths(data?.employeeMonthly ?? [], hasEmployeeData),
+    ])].sort((a, b) => a - b),
+    [data],
+  );
+  const options = useMemo(() => periodOptions(kind, months), [kind, months]);
+  const value = options.includes(picked) ? picked : options.at(-1) ?? "";
 
   const model = useMemo(() => {
     if (!data) return null;
@@ -40,25 +55,31 @@ export default function TeamPage() {
       name: e.name,
       agg: employeeAgg(data.employeeMonthly, e.name, w),
     }));
-    return { w, cur, prev, emp, leaderboard, prevLabel: previousLabel(kind, w) };
+    // the project this person actually worked on during the selected period
+    const project = employee === "all" ? "" : employeeProject(data.employeeMonthly, employee, w);
+    return { w, cur, prev, emp, project, leaderboard, prevLabel: previousLabel(kind, w) };
   }, [data, kind, value, employee]);
 
   if (loading && !data) return <p className="py-20 text-center text-ink2">{t("loading")}</p>;
   if (!data || !model) return null;
 
   const selEmp = data.employees.find((e) => e.name === employee);
+  // the month's own project wins; the Employees tab is only the fallback
+  const project = model.project || selEmp?.project || "";
+  const projectLabel = model.project ? t("projectThisPeriod") : t("currentProject");
   const intro = employee === "all"
     ? t("allEmployeesIntro")
-    : `${employee} — ${t("introRole")} ${selEmp?.project ?? ""}`;
+    : [employee, selEmp?.role, project && `${projectLabel}: ${project}`]
+        .filter(Boolean).join(" — ");
 
   return (
     <div>
       <header className="fade-up mb-8 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-extrabold text-brand-dark sm:text-3xl">{t("teamTitle")}</h1>
-          <p className="mt-1 text-sm text-ink3">{value}</p>
+          <p className="mt-1 text-sm text-ink3">{value || "—"}</p>
         </div>
-        <PeriodFilter kind={kind} value={value} onKind={setKind} onValue={setValue} />
+        <PeriodFilter kind={kind} value={value} onKind={setKind} onValue={setPicked} months={months} />
       </header>
 
       {/* team KPIs */}

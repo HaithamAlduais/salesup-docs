@@ -2,7 +2,10 @@
 import { useMemo, useState } from "react";
 import { useLang, type DictKey } from "@/lib/i18n";
 import { useData } from "@/lib/data-context";
-import { deptAgg, fmt, growthChange, parsePeriod, previousLabel, type DeptAgg } from "@/lib/calc";
+import {
+  dataMonths, deptAgg, fmt, growthChange, hasDeptData, parsePeriod, periodOptions,
+  previousLabel, type DeptAgg,
+} from "@/lib/calc";
 import type { PeriodKind } from "@/lib/types";
 import { PeriodFilter } from "@/components/period-filter";
 import { ChangeBadge, ChangeValue, KpiCard, SectionTitle } from "@/components/ui";
@@ -29,7 +32,14 @@ export default function PerformancePage() {
   const { t } = useLang();
   const { data, loading } = useData();
   const [kind, setKind] = useState<PeriodKind>("monthly");
-  const [value, setValue] = useState("Jun-2026");
+  const [picked, setPicked] = useState("");
+
+  const months = useMemo(
+    () => dataMonths(data?.departmentsMonthly ?? [], hasDeptData),
+    [data],
+  );
+  const options = useMemo(() => periodOptions(kind, months), [kind, months]);
+  const value = options.includes(picked) ? picked : options.at(-1) ?? "";
 
   const model = useMemo(() => {
     if (!data) return null;
@@ -56,9 +66,9 @@ export default function PerformancePage() {
       <header className="fade-up mb-8 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-extrabold text-brand-dark sm:text-3xl">{t("perfTitle")}</h1>
-          <p className="mt-1 text-sm text-ink3">{value}</p>
+          <p className="mt-1 text-sm text-ink3">{value || "—"}</p>
         </div>
-        <PeriodFilter kind={kind} value={value} onKind={setKind} onValue={setValue} />
+        <PeriodFilter kind={kind} value={value} onKind={setKind} onValue={setPicked} months={months} />
       </header>
 
       {/* growth comparison — small multiples: counts + MRR (no dual axis) */}

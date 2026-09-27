@@ -1,20 +1,19 @@
 // Google Sheets fetching + parsing into the Dataset shape.
 //
-// Uses the gviz JSON endpoint (not CSV): it returns RAW cell values (`v`)
-// alongside the sheet's formatted text (`f`), so numbers arrive as real
-// numbers no matter the sheet's locale. The CSV endpoint only ever sends the
-// formatted text — an Arabic-locale sheet writes 45000 as "45٬000" (U+066C
-// ARABIC THOUSANDS SEPARATOR, not an ASCII comma), which parsed to NaN and
-// left every target/revenue blank while small unformatted numbers worked.
+// Reads the whole workbook through Google's xlsx export: one request, every
+// cell exactly as the sheet stores it. Numbers stored as numbers arrive exact,
+// whatever the sheet's locale.
+//
+// The previous transport, the gviz feed, typed each column by the majority of
+// its cells and silently returned null for any cell of another type. In this
+// Arabic-locale sheet a number typed with an ASCII comma — "9,000" — or pasted
+// with a trailing line break is stored as text, so revenue plainly visible in
+// the sheet never reached the site. The export keeps those cells, and cleanNum
+// reads them.
+import { strFromU8, unzipSync } from "fflate";
 import type { Dataset } from "./types";
 
-/**
- * Source tabs. Every request pins `headers=1` rather than letting gviz detect
- * the header count: auto-detection is unreliable on all-text tabs (it reports
- * 0 headers for `Employees` and hands the header row back as data). `Reports`
- * is the one tab whose header is not row 1 — it sits under a banner block — so
- * it carries an extra `#`-column guard in fetchDataset below.
- */
+/** Source tabs, read by name. Row 1 of each is its column header. */
 export const TABS = {
   companies: "Companies",
   companyMonthly: "Company Monthly",
@@ -26,15 +25,13 @@ export const TABS = {
 } as const;
 
 /* ---------------- cell helpers ---------------- */
-export interface GvizCell { v: unknown; f?: string }
-export type GvizRow = (GvizCell | null)[];
-
-/** gviz serialises date cells as the literal string `Date(y,m,d[,h,m,s])` (month is 0-based). */
-const GVIZ_DATE = /^Date\((\d+),(\d+),(\d+)(?:,\d+,\d+(?:,\d+)?)?\)$/;
+/** A cell as stored, plus display text (`f`) for cells formatted as dates. */
+export interface SheetCell { v: string | number | boolean; f?: string }
+export type SheetRow = (SheetCell | null | undefined)[];
 
 /**
- * Locale-proof numeric cleanup for STRING cells. Raw `v` numbers skip this
- * entirely — it only catches values the sheet stored as text.
+ * Locale-proof numeric cleanup for TEXT cells. Cells stored as numbers skip
+ * this entirely — it only catches values the sheet stored as text.
  */
 export function cleanNum(s: string): number | null {
   let t = s.trim();
@@ -54,43 +51,132 @@ export function cleanNum(s: string): number | null {
   return Number.isFinite(v) ? v : null;
 }
 
-const numC = (c: GvizCell | null | undefined): number | null => {
-  if (!c || c.v == null) return null;
+const numC = (c: SheetCell | null | undefined): number | null => {
+  if (!c) return null;
   if (typeof c.v === "number") return Number.isFinite(c.v) ? c.v : null;
   if (typeof c.v === "boolean") return c.v ? 1 : 0;
-  return cleanNum(String(c.v));
+  return cleanNum(c.v);
 };
 
-const strC = (c: GvizCell | null | undefined): string => {
-  if (!c || c.v == null) return "";
-  // Prefer the sheet's own formatted text: for dates and numbers `v` holds a
-  // machine encoding, `f` holds what the user actually sees in the cell.
-  if (c.f != null && String(c.f).trim() !== "") return String(c.f).trim();
-  if (typeof c.v === "string") {
-    const t = c.v.trim();
-    const m = GVIZ_DATE.exec(t);
-    if (!m) return t;
-    const [, y, mo, d] = m;
-    return `${d.padStart(2, "0")}/${String(Number(mo) + 1).padStart(2, "0")}/${y}`;
-  }
+const strC = (c: SheetCell | null | undefined): string => {
+  if (!c) return "";
+  // dates are stored as serial numbers; `f` holds the date the user sees
+  if (c.f != null && c.f.trim() !== "") return c.f.trim();
   return String(c.v).trim();
 };
 
-/* ---------------- gviz JSON transport ---------------- */
-export function gvizJsonUrl(sheetId: string, tab: string): string {
-  return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/gviz/tq?tqx=out:json&headers=1&sheet=${encodeURIComponent(tab)}`;
+/* ---------------- xlsx reading ---------------- */
+const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+const decodeXml = (s: string) =>
+  s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) =>
+    e[0] === "#"
+      ? String.fromCodePoint(e[1] === "x" || e[1] === "X" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10))
+      : ENTITIES[e] ?? m);
+
+/** Text of every <t> run in a fragment — plain and rich-text strings alike. */
+const textOf = (xml: string) =>
+  decodeXml([...xml.matchAll(/<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g)].map((m) => m[1]).join(""));
+
+const attr = (attrs: string, name: string) =>
+  attrs.match(new RegExp(`(?:^|\\s)${name}="([^"]*)"`))?.[1];
+
+/** "AB" → 27 (0-based column index). */
+const colIndex = (letters: string) =>
+  [...letters].reduce((n, ch) => n * 26 + (ch.charCodeAt(0) - 64), 0) - 1;
+
+// Built-in date/time number formats (ECMA-376 §18.8.30), plus any custom
+// format whose code — once quoted text, [brackets] and escapes are removed —
+// still contains a day, month, year, hour or second token.
+const BUILTIN_DATE_FORMATS = new Set([
+  14, 15, 16, 17, 18, 19, 20, 21, 22, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
+  45, 46, 47, 50, 51, 52, 53, 54, 55, 56, 57, 58,
+]);
+const isDateCode = (code: string) => /[dmyhs]/i.test(code.replace(/"[^"]*"|\[[^\]]*\]|\\./g, ""));
+
+/** Indices into cellXfs whose number format is a date. */
+function dateStyles(stylesXml: string): Set<number> {
+  const custom = new Map<number, string>();
+  for (const m of stylesXml.matchAll(/<numFmt\s([^>]*?)\/?>/g)) {
+    const id = attr(m[1], "numFmtId"), code = attr(m[1], "formatCode");
+    if (id != null && code != null) custom.set(Number(id), decodeXml(code));
+  }
+  const xfs = stylesXml.match(/<cellXfs[^>]*>([\s\S]*?)<\/cellXfs>/)?.[1] ?? "";
+  const out = new Set<number>();
+  [...xfs.matchAll(/<xf\s([^>]*?)\/?>/g)].forEach((m, i) => {
+    const id = Number(attr(m[1], "numFmtId") ?? 0);
+    if (BUILTIN_DATE_FORMATS.has(id) || isDateCode(custom.get(id) ?? "")) out.add(i);
+  });
+  return out;
 }
 
-/** Extracts the JSON object from `google.visualization.Query.setResponse(...)`. */
-export function extractGvizJson(text: string): {
-  status?: string;
-  errors?: { detailed_message?: string; message?: string }[];
-  table?: { rows?: { c?: GvizRow }[] };
-} {
-  const start = text.indexOf("(");
-  const end = text.lastIndexOf(")");
-  if (start < 0 || end <= start) throw new Error("Unexpected gviz response shape");
-  return JSON.parse(text.slice(start + 1, end));
+/** Spreadsheet date serial → dd/mm/yyyy. */
+function serialToDate(serial: number, date1904: boolean): string {
+  const epoch = date1904 ? Date.UTC(1904, 0, 1) : Date.UTC(1899, 11, 30);
+  const d = new Date(epoch + Math.floor(serial) * 86_400_000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getUTCDate())}/${pad(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
+}
+
+function parseSheet(xml: string, strings: string[], dates: Set<number>, date1904: boolean): SheetRow[] {
+  const rows: SheetRow[] = [];
+  for (const m of xml.matchAll(/<c\s([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+    const [, attrs, inner = ""] = m;
+    const ref = attr(attrs, "r")?.match(/^([A-Z]+)(\d+)$/);
+    if (!ref) continue;
+    const type = attr(attrs, "t") ?? "n";
+    const raw = inner.match(/<v>([\s\S]*?)<\/v>/)?.[1];
+    let cell: SheetCell | null = null;
+    if (type === "s") cell = raw != null ? { v: strings[Number(raw)] ?? "" } : null;
+    else if (type === "inlineStr") cell = { v: textOf(inner.match(/<is>([\s\S]*?)<\/is>/)?.[1] ?? "") };
+    else if (type === "str") cell = raw != null ? { v: decodeXml(raw) } : null;
+    else if (type === "b") cell = raw != null ? { v: raw === "1" } : null;
+    else if (type === "e") cell = null; // #DIV/0! and friends carry no value
+    else if (raw != null && raw !== "") {
+      const n = Number(raw);
+      if (Number.isFinite(n)) {
+        cell = { v: n };
+        if (dates.has(Number(attr(attrs, "s") ?? -1))) cell.f = serialToDate(n, date1904);
+      }
+    }
+    if (cell) (rows[Number(ref[2]) - 1] ??= [])[colIndex(ref[1])] = cell;
+  }
+  return Array.from(rows, (r) => r ?? []);
+}
+
+/** Every tab of an xlsx file, by name, as rows of cells (row 1 included). */
+export function readWorkbook(zip: Uint8Array): Map<string, SheetRow[]> {
+  const pick = (names: Set<string>) => unzipSync(zip, { filter: (f) => names.has(f.name) });
+  const index = pick(new Set(["xl/workbook.xml", "xl/_rels/workbook.xml.rels"]));
+  const workbook = index["xl/workbook.xml"] ? strFromU8(index["xl/workbook.xml"]) : "";
+  const rels = index["xl/_rels/workbook.xml.rels"] ? strFromU8(index["xl/_rels/workbook.xml.rels"]) : "";
+  if (!workbook) throw new Error("Unexpected workbook export shape");
+
+  const target = new Map<string, string>();
+  for (const m of rels.matchAll(/<Relationship\s([^>]*?)\/?>/g)) {
+    const id = attr(m[1], "Id"), t = attr(m[1], "Target");
+    if (id && t) target.set(id, t.startsWith("/") ? t.slice(1) : `xl/${t}`);
+  }
+  const sheets = new Map<string, string>();
+  for (const m of workbook.matchAll(/<sheet\s([^>]*?)\/?>/g)) {
+    const name = attr(m[1], "name"), path = target.get(attr(m[1], "r:id") ?? "");
+    if (name && path) sheets.set(decodeXml(name), path);
+  }
+
+  const files = pick(new Set(["xl/sharedStrings.xml", "xl/styles.xml", ...sheets.values()]));
+  const text = (p: string) => (files[p] ? strFromU8(files[p]) : "");
+  const strings = [...text("xl/sharedStrings.xml").matchAll(/<si(?:\s[^>]*)?(?:\/>|>([\s\S]*?)<\/si>)/g)]
+    .map((m) => textOf(m[1] ?? ""));
+  const dates = dateStyles(text("xl/styles.xml"));
+  const date1904 = /<workbookPr\s[^>]*date1904="(?:1|true)"/.test(workbook);
+
+  const out = new Map<string, SheetRow[]>();
+  for (const [name, path] of sheets) out.set(name, parseSheet(text(path), strings, dates, date1904));
+  return out;
+}
+
+/* ---------------- transport ---------------- */
+export function exportUrl(sheetId: string): string {
+  return `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/export?format=xlsx`;
 }
 
 /** Last-wins dedupe: an appended correction row replaces the original month row. */
@@ -100,36 +186,31 @@ const dedupeLast = <T,>(rows: T[], key: (r: T) => string): T[] => {
   return [...m.values()];
 };
 
-async function fetchTab(sheetId: string, tab: string): Promise<GvizRow[]> {
-  // 30s server-side cache: many visitors share one upstream fetch (protects gviz quota)
-  const res = await fetch(gvizJsonUrl(sheetId, tab), { next: { revalidate: 30 } });
-  if (!res.ok) throw new Error(`Tab "${tab}" HTTP ${res.status}`);
-  const text = await res.text();
-  if (text.trimStart().startsWith("<")) {
-    throw new Error(`Tab "${tab}" is not accessible — make the sheet viewable by link`);
+async function fetchWorkbook(sheetId: string): Promise<Map<string, SheetRow[]>> {
+  // 30s server-side cache: many visitors share one upstream fetch
+  const res = await fetch(exportUrl(sheetId), { next: { revalidate: 30 } });
+  if (res.status === 404) throw new Error("Sheet not found — check the sheet ID");
+  if (!res.ok) throw new Error(`Sheet HTTP ${res.status} — make the sheet viewable by link`);
+  const buf = new Uint8Array(await res.arrayBuffer());
+  // a private sheet answers with Google's sign-in page, not a zip ("PK")
+  if (buf[0] !== 0x50 || buf[1] !== 0x4b) {
+    throw new Error("Sheet is not accessible — make the sheet viewable by link");
   }
-  const json = extractGvizJson(text);
-  if (json.status === "error") {
-    const msg = json.errors?.[0]?.detailed_message || json.errors?.[0]?.message || "gviz error";
-    throw new Error(`Tab "${tab}": ${msg}`);
-  }
-  return (json.table?.rows ?? []).map((r) => r.c ?? []);
+  return readWorkbook(buf);
 }
 
 export async function fetchDataset(sheetId: string): Promise<Dataset> {
-  const [companies, companyMonthly, departmentsMonthly, teamMonthly, employees, employeeMonthly] =
-    await Promise.all([
-      fetchTab(sheetId, TABS.companies),
-      fetchTab(sheetId, TABS.companyMonthly),
-      fetchTab(sheetId, TABS.departmentsMonthly),
-      fetchTab(sheetId, TABS.teamMonthly),
-      fetchTab(sheetId, TABS.employees),
-      fetchTab(sheetId, TABS.employeeMonthly),
-    ]);
-  let reports: GvizRow[] = [];
-  try {
-    reports = await fetchTab(sheetId, TABS.reports);
-  } catch { /* Reports tab is optional */ }
+  const book = await fetchWorkbook(sheetId);
+  const tab = (name: string): SheetRow[] => {
+    const rows = book.get(name);
+    if (!rows) throw new Error(`Tab "${name}" not found — keep the sheet's tab names`);
+    return rows.slice(1); // row 1 is the column header
+  };
+  const [companies, companyMonthly, departmentsMonthly, teamMonthly, employees, employeeMonthly] = [
+    tab(TABS.companies), tab(TABS.companyMonthly), tab(TABS.departmentsMonthly),
+    tab(TABS.teamMonthly), tab(TABS.employees), tab(TABS.employeeMonthly),
+  ];
+  const reports = book.has(TABS.reports) ? tab(TABS.reports) : []; // optional tab
 
   return {
     companies: companies
@@ -184,9 +265,9 @@ export async function fetchDataset(sheetId: string): Promise<Dataset> {
         })),
       (r) => `${r.year}-${r.month}-${r.employee}`,
     ),
-    // Reports table sits under a banner block, so the column-header row survives
-    // gviz's single-row header strip. Requiring a numeric `#` (column B) drops it
-    // — and any future banner row — without depending on the banner's height.
+    // The Reports table sits under a banner block, so its own column-header row
+    // is data here. Requiring a numeric `#` (column B) drops it — and any future
+    // banner row — without depending on the banner's height.
     reports: reports
       .filter((r) => numC(r[1]) != null && (strC(r[3]) || strC(r[2])))
       .map((r) => ({

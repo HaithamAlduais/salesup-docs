@@ -50,7 +50,8 @@ Or from the terminal: `npx vercel` (then `npx vercel --prod`).
 ## 5 · How "live" works
 
 - The site re-fetches the sheet **every 60 seconds**, whenever the tab regains focus, and on the manual ↻ button.
-- Fetching uses Google's public CSV endpoint for link-viewable sheets — no API key, no Google account needed by visitors.
+- Fetching uses Google's xlsx export for link-viewable sheets — one request for the whole workbook, every cell exactly as stored, no API key and no Google account needed by visitors.
+- A number the sheet stored as **text** is still read: `9,000` typed with an English comma (the Arabic locale's separator is `٬`) or a value pasted with a trailing line break. The sheet's *own* formulas can't see such a cell, though — the Departments **Totals** row, for one, sums as if it were empty — so retype it as a plain number (`9000`), or set the sheet's locale to one that uses `,` (File → Settings → Locale).
 - Sheet unreachable? The site keeps showing the last data and displays a warning chip.
 
 ## 6 · Data contract (what the CRM/sheet must contain)
@@ -71,12 +72,13 @@ Empty months are ignored by every calculation (they never count as 0% performanc
 
 ```
 src/lib/calc.ts          calculation engine (ported 1:1 from the Excel workbook)
-src/lib/sheets.ts        Google Sheets CSV fetching + parsing
+src/lib/sheets.ts        Google Sheets xlsx export → Dataset parsing
 src/lib/data-context.tsx live polling / refresh / sheet-ID storage
 src/lib/i18n.tsx         Arabic/English dictionary + RTL switching
 src/app/api/sheet/       server route: sheet → JSON (demo fallback)
 src/app/…                pages · src/components/… UI + charts
 scripts/parity.mts       parity tests vs the workbook's verified numbers
+scripts/sheet-sim.mts    offline transport tests: text-typed numbers, dates, errors, private sheets
 ```
 
-Run parity tests: `npx tsx scripts/parity.mts`
+Run parity tests: `npx tsx scripts/parity.mts` · transport tests: `npx tsx scripts/sheet-sim.mts`

@@ -37,7 +37,7 @@ const dict = {
   salesAgents: { ar: "أخصائيو المبيعات", en: "Sales Agents" },
   openDashboards: { ar: "لوحات المتابعة", en: "Dashboards" },
   homeCompaniesDesc: { ar: "مؤشرات كل شركة، المقارنة بالفترة السابقة، المبيعات مقابل الهدف", en: "Per-company KPIs, previous-period comparison, sales vs target" },
-  homePerfDesc: { ar: "الأقسام: الإجمالي، خدمات المبيعات، التسويق — المشاريع والإيرادات", en: "Departments: Totals, Sales Services, Marketing — projects & MRR" },
+  homePerfDesc: { ar: "الأقسام: الإجمالي، خدمات المبيعات — المشاريع والإيرادات", en: "Departments: Totals, Sales Services — projects & MRR" },
   homeTeamDesc: { ar: "أخصائيو المبيعات، الاحتفاظ، أداء الموظفين مقابل الهدف", en: "Sales agents, retention, employee performance vs target" },
   homeReportsDesc: { ar: "تقارير PDF مصنّفة حسب الفئة", en: "Categorised PDF reports" },
   // periods
@@ -93,7 +93,6 @@ const dict = {
   growthComparison: { ar: "مقارنة النمو", en: "Growth Comparison" },
   deptTotals: { ar: "الإجمالي", en: "Totals" },
   deptSales: { ar: "خدمات المبيعات", en: "Sales Services" },
-  deptMarketing: { ar: "التسويق", en: "Marketing" },
   activeProjects: { ar: "المشاريع النشطة", en: "Active Projects" },
   newProjects: { ar: "المشاريع الجديدة", en: "New Projects" },
   endedProjects: { ar: "المشاريع المنتهية", en: "Ended Projects" },

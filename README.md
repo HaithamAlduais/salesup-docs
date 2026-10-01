@@ -60,7 +60,7 @@ Or from the terminal: `npx vercel` (then `npx vercel --prod`).
 |---|---|
 | Companies | Company, Monthly Target, Target Type (`Revenue`/`Deals`), Unit |
 | Company Monthly | Year, Month (1-12), Company, Revenue (SAR), Deals Closed, Leads, Win Rate (%), Pipeline |
-| Departments Monthly | Year, Month, Department (`Totals`/`Sales Services`/`Marketing`), Active Projects, New Projects, Ended Projects, MRR, Avg Revenue per Project, Days to Close, NPS |
+| Departments Monthly | Year, Month, Department (`Totals`/`Sales Services`), Active Projects, New Projects, Ended Projects, MRR, Avg Revenue per Project, Days to Close, NPS |
 | Team Monthly | Year, Month, Sales Agents (Active), New Agents, Resigned Agents, Retention Rate (%) |
 | Employees | Employee, Role, Current Project |
 | Employee Monthly | Year, Month, Employee, Deals Closed, Revenue (K SAR), New Deals, Visits, Target ×4 |

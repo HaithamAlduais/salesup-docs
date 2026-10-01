@@ -14,7 +14,6 @@ import { GroupedCompare, PeriodLegend } from "@/components/charts";
 const DEPTS: { key: string; label: DictKey; hasDays: boolean }[] = [
   { key: "Totals", label: "deptTotals", hasDays: false },
   { key: "Sales Services", label: "deptSales", hasDays: true },
-  { key: "Marketing", label: "deptMarketing", hasDays: false },
 ];
 
 function GrowthRow({ label, value, badge, indent = false }: {

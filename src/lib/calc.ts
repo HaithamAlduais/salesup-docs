@@ -298,6 +298,18 @@ export function deptAgg(
   };
 }
 
+/**
+ * Field-by-field merge of two department aggregates: `primary` wins wherever it
+ * has a value. Lets the page show Sales Services as one section while still
+ * picking up a figure only its Totals row carries (Totals derives average
+ * revenue from MRR ÷ active projects when nobody typed it in).
+ */
+export function mergeDeptAgg(primary: DeptAgg, fallback: DeptAgg): DeptAgg {
+  const out = { ...primary };
+  for (const k of Object.keys(out) as (keyof DeptAgg)[]) out[k] = primary[k] ?? fallback[k];
+  return out;
+}
+
 export function growthChange(cur: number | null, prev: number | null): MetricChange {
   if (cur == null || prev == null) return { key: "", change: null, cls: null };
   const change = pct(cur, prev);
